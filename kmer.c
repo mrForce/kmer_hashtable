@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include "hash_table.h"
 #include<string.h>
+#include<mcheck.h>
 #define LINE_LENGTH 256
 #define BUFFER_CAPACITY 50
 
@@ -27,7 +28,8 @@ typedef struct {
     unsigned int g_weight;
     unsigned int c_weight;
     unsigned int t_weight;
-    unsigned int num_sequences;
+  size_t first_sequence_index;
+    size_t num_sequences;
     Section* sectionList;
     int num_sections;
 } KMerPayload;
@@ -47,6 +49,7 @@ void* mer_count(void* arg);
   Takes in path to a FASTA file, k, and number of threads.
  */
 int main(int argc, char* argv[]){
+  mtrace();
     if(argc == 4){
 	int num_threads = atoi(argv[3]);
 	int k = atoi(argv[2]);
@@ -128,13 +131,14 @@ int main(int argc, char* argv[]){
 	unsigned long last_sequence_index = 0;
 	unsigned long long partial_nucleotide_index = 0;
 	unsigned long long  space_to_reserve;
-	unsigned int num_sequences;
+	size_t num_sequences;
 
 
 	KMerPayload* payloads = (KMerPayload*) malloc(sizeof(KMerPayload)*num_threads);
 	for(i = 0; i < num_threads; i++){
 	    space_to_reserve = 0;
 	    num_sequences = 0;
+	    payloads[i].first_sequence_index = last_sequence_index;
 	    while(nucleotide_distribution[i] > 0){
 		if(sequence_lengths[last_sequence_index] - partial_nucleotide_index > nucleotide_distribution[i]){
 		    //then part of a sequence. Keep last sequence index here.
@@ -359,6 +363,7 @@ int main(int argc, char* argv[]){
     }else{
 	printf("Usage: kmer <FASTA file> <k> <number of threads> \n");
     }
+    muntrace();
     return 0;
 }
 
@@ -451,8 +456,8 @@ void* mer_count(void* arg){
     KMerPayload* payload = (KMerPayload*) arg;
     char* nucleotide_block = payload->nucleotide_block;
     int k = payload->k;
-
-    unsigned int num_sequences = payload->num_sequences;
+    size_t sequence_index = payload->first_sequence_index;
+    size_t num_sequences = payload->num_sequences;
     Section* sectionList = payload->sectionList;
 
     //we need a window of size k
@@ -463,7 +468,7 @@ void* mer_count(void* arg){
     Section* temp_section;
     
     char *buffer[BUFFER_CAPACITY];
-
+    size_t sequence_indices[BUFFER_CAPACITY];
     int num_elements_in_buffer = 0;
     unsigned int a_weight = payload->a_weight;
     unsigned int g_weight = payload->g_weight;
@@ -474,20 +479,23 @@ void* mer_count(void* arg){
 
     int i, j;
     for(i = 0; i < num_sequences; i++){
+      
 	window_sum = calculateSum(window, k, a_weight, g_weight, c_weight, t_weight);
-
+	
 	if(window_sum > 0){
 	    temp_section = getSection(sectionList, window_sum);
 	    min_sum = temp_section->min_sum;
 	    max_sum = temp_section->max_sum;
 
 	    while(window[k - 1] != '\0'){
-
+	      if(strlen(window) < 4){
+		printf("window: %s\n", window);
+	      }
 		if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
 		    //commit the buffer!
 		    pthread_mutex_lock(&(temp_section->lock));
 		    for(j = 0; j < num_elements_in_buffer; j++){
-			increment_count(buffer[j], k, temp_section->table);
+		      increment_count(buffer[j], k, sequence_indices[j], 0, temp_section->table);
 		    }
 		    
 		    pthread_mutex_unlock(&(temp_section->lock));
@@ -504,6 +512,7 @@ void* mer_count(void* arg){
 		}else{
 		    //if we're in the same section, then move window forward by doing this stuff.
 		    buffer[num_elements_in_buffer] = window;
+		    sequence_indices[num_elements_in_buffer] = sequence_index + i;
 		    if(window[0] == 'A'){
 			window_sum -= a_weight;
 		    }else if(window[0] == 'G'){
@@ -550,7 +559,7 @@ void* mer_count(void* arg){
 	 //commit the buffer!
 	 pthread_mutex_lock(&(temp_section->lock));
 	 for(i = 0; i < num_elements_in_buffer; i++){
-	     increment_count(buffer[i], k, temp_section->table);
+	   increment_count(buffer[i], k, sequence_indices[i], 0, temp_section->table);
 	 }
 	 pthread_mutex_unlock(&(temp_section->lock));
 	 num_elements_in_buffer = 0;
