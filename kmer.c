@@ -1,3 +1,5 @@
+#define _FILE_OFFSET_BITS 64
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<errno.h>
@@ -7,7 +9,7 @@
 #include<mcheck.h>
 #define LINE_LENGTH 256
 #define BUFFER_CAPACITY 50
-
+#define NUM_BUCKETS 1021
 typedef struct section{
     //inclusive
     int min_sum;
@@ -29,6 +31,7 @@ typedef struct {
     unsigned int c_weight;
     unsigned int t_weight;
   size_t first_sequence_index;
+  size_t first_amino_acid_index;
     size_t num_sequences;
     Section* sectionList;
     int num_sections;
@@ -139,6 +142,7 @@ int main(int argc, char* argv[]){
 	    space_to_reserve = 0;
 	    num_sequences = 0;
 	    payloads[i].first_sequence_index = last_sequence_index;
+	    payloads[i].first_amino_acid_index = partial_nucleotide_index;
 	    while(nucleotide_distribution[i] > 0){
 		if(sequence_lengths[last_sequence_index] - partial_nucleotide_index > nucleotide_distribution[i]){
 		    //then part of a sequence. Keep last sequence index here.
@@ -305,7 +309,7 @@ int main(int argc, char* argv[]){
 	    sections[i].min_sum = last_max_sum;
 	    sections[i].max_sum = section_distribution[i] + last_max_sum;
 	    last_max_sum = sections[i].max_sum;
-	    sections[i].table = make_table(1021);
+	    sections[i].table = make_table(NUM_BUCKETS);
 	    pthread_mutex_init(&sections[i].lock, NULL);
 	    if(i == 0){
 		sections[0].previous_section = NULL;
@@ -457,6 +461,7 @@ void* mer_count(void* arg){
     char* nucleotide_block = payload->nucleotide_block;
     int k = payload->k;
     size_t sequence_index = payload->first_sequence_index;
+    size_t amino_acid_index = payload->first_amino_acid_index;
     size_t num_sequences = payload->num_sequences;
     Section* sectionList = payload->sectionList;
 
@@ -469,6 +474,7 @@ void* mer_count(void* arg){
     
     char *buffer[BUFFER_CAPACITY];
     size_t sequence_indices[BUFFER_CAPACITY];
+    size_t amino_acid_indices[BUFFER_CAPACITY];
     int num_elements_in_buffer = 0;
     unsigned int a_weight = payload->a_weight;
     unsigned int g_weight = payload->g_weight;
@@ -495,7 +501,7 @@ void* mer_count(void* arg){
 		    //commit the buffer!
 		    pthread_mutex_lock(&(temp_section->lock));
 		    for(j = 0; j < num_elements_in_buffer; j++){
-		      increment_count(buffer[j], k, sequence_indices[j], 0, temp_section->table);
+		      increment_count(buffer[j], k, sequence_indices[j], amino_acid_indices[j], temp_section->table);
 		    }
 		    
 		    pthread_mutex_unlock(&(temp_section->lock));
@@ -513,6 +519,7 @@ void* mer_count(void* arg){
 		    //if we're in the same section, then move window forward by doing this stuff.
 		    buffer[num_elements_in_buffer] = window;
 		    sequence_indices[num_elements_in_buffer] = sequence_index + i;
+		    amino_acid_indices[num_elements_in_buffer] = amino_acid_index;
 		    if(window[0] == 'A'){
 			window_sum -= a_weight;
 		    }else if(window[0] == 'G'){
@@ -537,6 +544,7 @@ void* mer_count(void* arg){
 			window_sum += t_weight;
 		    }
 		    window++;
+		    amino_acid_index++;
 		    num_elements_in_buffer++;
 		}
 
@@ -546,6 +554,7 @@ void* mer_count(void* arg){
 	    if(i < num_sequences - 1){
 		//if we aren't at the last sequence, be sure to push the window over
 		window += strlen(window) + 1;
+		amino_acid_index = 0;
 	    }
 	}else{
 	    window += strlen(window) + 1;
@@ -559,7 +568,7 @@ void* mer_count(void* arg){
 	 //commit the buffer!
 	 pthread_mutex_lock(&(temp_section->lock));
 	 for(i = 0; i < num_elements_in_buffer; i++){
-	   increment_count(buffer[i], k, sequence_indices[i], 0, temp_section->table);
+	   increment_count(buffer[i], k, sequence_indices[i], amino_acid_indices[i], temp_section->table);
 	 }
 	 pthread_mutex_unlock(&(temp_section->lock));
 	 num_elements_in_buffer = 0;

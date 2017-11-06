@@ -13,6 +13,88 @@ Stack* init_stack(size_t initial_capacity){
   return stack;
 }
 
+
+SerializedStack read_serialized_stack(off_t stack_start, FILE* file){
+  if(fseeko(file, stack_start, SEEK_SET)){
+    uint32_t num_entries_network;
+    if(fread(&num_entries, sizeof(uint32_t), 1, file) == 1){
+      uint32_t num_entries = ntohl(num_entries_network);
+      KMerPointer* sequence_locations = (KMerPointer*) malloc(sizeof(KMerPointer)*num_entries);
+      if(fseek(file, sizeof(uint32_t), SEEK_CUR)){
+	if(fread(sequence_locations, sizeof(KMerPointer), num_entries) == num_entries){
+	  uint32_t i;
+	  for(i = 0; i < num_entries; i++){
+	    sequence_locations[i].sequence_number = ntohl(sequence_locations[i].sequence_number);
+	    sequence_locations[i].amino_acid_index = ntohl(sequence_locations[i].amino_acid_index);	    
+	  }
+	  SerializedStack stack;
+	  stack.elements = sequence_locations;
+	  stack.num_elements = num_entries;
+	  return stack;
+	}else{
+	  return NULL;
+	}
+      }else{
+	return NULL;
+      }
+    }else{
+      return NULL;
+    }
+  }else{
+    return NULL;
+  }
+}
+
+char write_serialized_stack(SerializedStack stack, FILE* file){
+  uint32_t num_elements_network = htonl(stack.num_elements);
+  uint32_t num_elements_host  = stack.num_elements;
+
+  if(fwrite(&num_elements_network, sizeof(stack.num_elements), 1, file) == 1){
+    if(fseek(file, sizeof(uint32_t), SEEK_CUR) > 0){
+      uint32_t i;
+      /* copy the stack, apply network order to the uint32_t parameters, and then use fwrite*/
+      KMerPointer* copy = (KMerPointer*) malloc(sizeof(KMerPointer)*num_elements_host);
+      memcpy(copy, stack.elements, sizeof(KMerPointer)*num_elements_host);
+      for(i = 0; i < stack.num_elements; i++){
+	copy[i].sequence_number = htonl(stack[i].sequence_number);
+	copy[i].amino_acid_index = htonl(stack[i].amino_acid_index);	
+      }
+      if(fwrite(copy, sizeof(KMerPointer), num_elements_host, file) == (size_t) num_elements_host){
+	if(fseek(file, num_elements_host*sizeof(KMerPointer), SEEK_CUR) == 0){
+	  return 0;
+	}else{
+	  return -1;
+	}
+      }else{
+	return -1;
+      }
+      
+    }else{
+      return -1;
+    }
+  }else{
+    return -1;
+  }
+}
+
+/* 
+   
+ */
+
+int saveToDisk(HashTable* table, FILE* file){
+  size_t i;
+  rewind(file);
+  //reserve space in the file for the FileIndex and the hash table
+  FileIndex index;
+  SerializedHashTable empty_hash_table;
+  fseeko(file, (off_t) (sizeof(FileIndex) + sizeof(SerializedHashTable)), SEEK_SET);
+  
+  
+  for(i = 0; i < table->num_buckets; i++){
+    
+  }
+}
+
 void free_stack(Stack* stack){
   free(stack->elements);
   free(stack);
@@ -81,7 +163,7 @@ void print_and_free_table(HashTable* table){
 	    while(node != NULL){
 		printf("K-mer: %s, count: %lu, ", node->sequence, node->count);
 		for(j = 0; j < node->sequences_contain_kmer->current_size; j++){
-		  printf("%lu, ", node->sequences_contain_kmer->elements[j].sequence_number);
+		  printf("(%lu, %lu), ", node->sequences_contain_kmer->elements[j].sequence_number, node->sequences_contain_kmer->elements[j].amino_acid_index);
 		}
 		printf("\n");
 		nextNode = node->nextNode;
