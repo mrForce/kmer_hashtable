@@ -7,8 +7,8 @@
 #define GROWTH_FACTOR 1.5
 typedef struct _kmer_pointer{
   /* the sequence_number tells us which sequence the kmer is in. The amino_acid_index tells us where the kmer is within the sequence */
-  uint32_t sequence_number;
-  uint32_t amino_acid_index;
+  size_t sequence_number;
+  size_t amino_acid_index;
 } KMerPointer;
 
 typedef struct _stack{
@@ -52,41 +52,6 @@ typedef struct _fileIndex{
 } FileIndex;
 
 
-typedef struct _serial_stack{
-  KMerPointer* elements;
-  uint32_t num_elements;
-} SerializedStack;
-
-
-
-typedef struct _serial_node{
-  char* sequence;
-  off_t sequences_stack;
-} SerializedNode;
-
-
-typedef struct _nodeArray{
-  //location of the array within the file
-  off_t nodes;
-  size_t num_nodes;
-} SerializedNodeArray;
-
-typedef struct _serial_hash_table{
-  off_t node_arrays[NUM_BUCKETS];
-} SerializedHashTable;
-
-
-SerializedStack read_serialized_stack(off_t, FILE*);
-
-/* 
-Returns 0 if successfull, -1 otherwise.
-
-Moves the file pointer right after the stack.
- */
-char write_serialized_stack(SerializedStack, FILE*);
-
-//returns 1 if successfull, 0 otherwise
-int saveToDisk(HashTable*, FILE*);
 int hash(char* sequence, int num_characters);
 
 
