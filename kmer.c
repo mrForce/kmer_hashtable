@@ -12,6 +12,11 @@
 
 #define NUM_BUCKETS 1021
 
+
+typedef struct _peptide_count{
+  char peptide;
+  unsigned long long count;
+} PeptideCount;
 typedef struct section{
     //inclusive
     int min_sum;
@@ -46,9 +51,17 @@ void* mer_count(void* arg);
 
 
 
-int compare_numbers (const void * x, const void * y) {
+int compare_peptide_count (const void * x, const void * y) {
   //do it in descending order
-   return ( *(unsigned long long*)y - *(unsigned long long*)x );
+  PeptideCount* x_p = (PeptideCount*) x;
+  PeptideCount* y_p = (PeptideCount*) y;
+  if(x_p->count > y_p->count){
+    return -1;
+  }else if(x_p->count < y_p->count){
+    return 1;
+  }
+  return 0;
+  
 }
 /*
   Takes in path to a FASTA file, k, and number of threads.
@@ -273,14 +286,16 @@ int main(int argc, char* argv[]){
 	printf("Copied the sequences from the FASTA file\n");
 	fclose(fasta_file);
 	//We need to assign weights to the nucleotides, where the most frequent nucleotide has a weight of 1, second most frequent has weight of 2, then 3, then 4
-	unsigned long long counts[26];
+	PeptideCount counts[26];
 	for(int i = 0; i < 26; i++){
-	  counts[i] = peptide_count[i];
+	  counts[i].peptide = 'A' + i;
+	  counts[i].count = peptide_count[i];
 	}
-	qsort(counts, 26, sizeof(unsigned long long), compare_numbers);
-	unsigned int weights[26];
+	qsort(counts, 26, sizeof(PeptideCount), compare_peptide_count);
+	unsigned int* weights = (unsigned int*) malloc(26*sizeof(unsigned int));
 	for(int i = 0; i < 26; i++){
-	  weights[counts[i] - 'A'] = i + 1;
+	  weights[counts[i].peptide - 'A'] = i + 1;
+
 	}
 	int num_sections = 2*num_threads;
 	/*
@@ -316,7 +331,7 @@ int main(int argc, char* argv[]){
 	for(i = 0; i < num_threads; i++){
 	    payloads[i].sectionList = sections;
 	    payloads[i].k = k;
-	    payloads[i].weights = &weights[0];
+	    payloads[i].weights = weights;
 	    payloads[i].num_sections = 2*num_threads;
 	}
 	printf("Going to create threads\n");
@@ -333,7 +348,7 @@ int main(int argc, char* argv[]){
 
 	HashTable* tempTable;
 
-
+	printf("Threads have finished\n");
 	//now take the sections, and print out their hashtables.
 	for(i = 0; i < num_sections; i++){
 	    tempTable = sections[i].table;
