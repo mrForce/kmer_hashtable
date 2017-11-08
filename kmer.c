@@ -102,8 +102,8 @@ int main(int argc, char* argv[]){
 		/*
 		  If the sequence length is less than k, then don't include it in the number of nucleotides.
 		 */
-		if(num_fasta_sequences > 0 && sequence_lengths[num_fasta_sequences] < k){
-		    num_nucleotides -= sequence_lengths[num_fasta_sequences];
+		if(num_fasta_sequences > 0 && sequence_lengths[num_fasta_sequences - 1] < k){
+		    num_nucleotides -= sequence_lengths[num_fasta_sequences-1];
 		}
 		if(capacity == num_fasta_sequences){
 		    //then realloc -- since it's an array of unsigned longs, this shouldn't be too expensive.
@@ -122,7 +122,7 @@ int main(int argc, char* argv[]){
 
 
 		sequence_lengths[num_fasta_sequences] = 0;
-		  
+		num_fasta_sequences++;
 		
 
 	    }else{
@@ -131,14 +131,14 @@ int main(int argc, char* argv[]){
 	        while(line[i] >= 'A' && line[i] <= 'Z'){
 		    i++;
 		}
-	        sequence_lengths[num_fasta_sequences] += i;
+	        sequence_lengths[num_fasta_sequences-1] += i;
 		num_nucleotides += i;
-		num_fasta_sequences++;
+
 	    }
 	}
 
 	//make sure the last sequence is of at least length k.
-	if(sequence_lengths[num_fasta_sequences - 1] < k){
+	if(sequence_lengths[num_fasta_sequences -1] < k){
 	    num_nucleotides -= sequence_lengths[num_fasta_sequences - 1];
 	}
 
@@ -170,7 +170,7 @@ int main(int argc, char* argv[]){
 
 		      k - 1 + 1 = k.
 		     */
-		    space_to_reserve += nucleotide_distribution[i] + k;
+		  space_to_reserve += nucleotide_distribution[i] + k;
 		    partial_nucleotide_index += nucleotide_distribution[i];
 		    nucleotide_distribution[i] = 0;
 		   
@@ -185,6 +185,7 @@ int main(int argc, char* argv[]){
 		num_sequences++;
 	    }
 	    payloads[i].nucleotide_block = (char*) malloc(sizeof(char)*space_to_reserve);
+	    payloads[i].nucleotide_block[space_to_reserve-1] = '\0';
 	    payloads[i].num_sequences = num_sequences;
 	}
 	  
@@ -292,7 +293,7 @@ int main(int argc, char* argv[]){
 	  counts[i].count = peptide_count[i];
 	}
 	qsort(counts, 26, sizeof(PeptideCount), compare_peptide_count);
-	unsigned int* weights = (unsigned int*) malloc(26*sizeof(unsigned int));
+	unsigned int weights[26];/* = (unsigned int*) malloc(26*sizeof(unsigned int));*/
 	for(int i = 0; i < 26; i++){
 	  weights[counts[i].peptide - 'A'] = i + 1;
 
@@ -457,6 +458,7 @@ void* mer_count(void* arg){
     KMerPayload* payload = (KMerPayload*) arg;
     char* nucleotide_block = payload->nucleotide_block;
     int k = payload->k;
+
     size_t sequence_index = payload->first_sequence_index;
     int beginning = 1;
     if(sequence_index > 0){
@@ -465,9 +467,10 @@ void* mer_count(void* arg){
     size_t amino_acid_index = payload->first_amino_acid_index;
     size_t num_sequences = payload->num_sequences;
     Section* sectionList = payload->sectionList;
+    /*
     if(beginning){
       printf("sequence index: %zu, amino acid index: %zu, num sequences: %zu\n", sequence_index, amino_acid_index, num_sequences);
-    }
+      }*/
     //we need a window of size k
     char* window = nucleotide_block;
     int window_sum, min_sum, max_sum;
@@ -487,22 +490,18 @@ void* mer_count(void* arg){
     for(i = 0; i < num_sequences; i++){
       
 	window_sum = calculateSum(window, k, weights);
-	
+
 	if(window_sum > 0){
 	    temp_section = getSection(sectionList, window_sum);
 	    min_sum = temp_section->min_sum;
 	    max_sum = temp_section->max_sum;
-
-	    while(window[k - 1] != '\0'){	    
-	      if(beginning){
-		printf("num elements in buffer: %i\n", num_elements_in_buffer);
-		printf("window: %s\n", window);
-	      }
-		if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
+	    
+	    while(strlen(window) >= k){
+	 
+	      if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
 		    //commit the buffer!
 		    pthread_mutex_lock(&(temp_section->lock));
 		    for(j = 0; j < num_elements_in_buffer; j++){
-		      printf("Commiting from buffer: %s\n", buffer[j]);
 		      increment_count(buffer[j], k, sequence_indices[j], amino_acid_indices[j], temp_section->table);
 		    }
 		    
@@ -538,9 +537,9 @@ void* mer_count(void* arg){
 		    num_elements_in_buffer++;
 		}
 
-		    
+	    }   
 
-	    }
+	   
 	    if(i < num_sequences - 1){
 		//if we aren't at the last sequence, be sure to push the window over
 		window += strlen(window) + 1;
@@ -558,7 +557,6 @@ void* mer_count(void* arg){
 	 //commit the buffer!
 	 pthread_mutex_lock(&(temp_section->lock));
 	 for(i = 0; i < num_elements_in_buffer; i++){
-	   printf("Commiting from buffer: %s\n", buffer[j]);
 	   increment_count(buffer[i], k, sequence_indices[i], amino_acid_indices[i], temp_section->table);
 	 }
 	 pthread_mutex_unlock(&(temp_section->lock));

@@ -16,6 +16,7 @@ Stack* init_stack(size_t initial_capacity){
 
 
 void free_stack(Stack* stack){
+
   free(stack->elements);
   free(stack);
 }
@@ -87,8 +88,9 @@ void print_and_free_table(HashTable* table){
 		}
 		printf("\n");
 		nextNode = node->nextNode;
-		//free(node->sequence);
-		//free(node);
+		free_stack(node->sequences_contain_kmer);
+		free(node->sequence);
+		free(node);
 		node = nextNode;
 		z++;
 	    }

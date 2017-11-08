@@ -1,14 +1,16 @@
 import sys
+from Bio import SeqIO
 if len(sys.argv) != 3:
-    print("usage: python find_kmer.py sequences.txt kmer")
-    print("Note that sequences.txt should have a sequence on each line; not FASTA")
+    print("usage: python find_kmer.py sequences.fasta kmer")
+
     sys.exit()
 
 file_name = sys.argv[1]
 kmer = sys.argv[2]
 with open(file_name, "r") as f:
     i = 0
-    for line in f:
+    for record in SeqIO.parse(f, 'fasta'):
+        line = record.seq
         start_index = 0
         keepGoing = True
         while keepGoing:
