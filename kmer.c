@@ -9,7 +9,9 @@
 #include<mcheck.h>
 #define LINE_LENGTH 256
 #define BUFFER_CAPACITY 50
+
 #define NUM_BUCKETS 1021
+
 typedef struct section{
     //inclusive
     int min_sum;
@@ -26,10 +28,7 @@ typedef struct {
     //points to the block of memory that the thread should work with; this contains the sequences, seperated by \0 between each FASTE entry. 
     char* nucleotide_block;
     int k;
-    unsigned int a_weight;
-    unsigned int g_weight;
-    unsigned int c_weight;
-    unsigned int t_weight;
+  unsigned int* weights;
   size_t first_sequence_index;
   size_t first_amino_acid_index;
     size_t num_sequences;
@@ -47,7 +46,10 @@ void* mer_count(void* arg);
 
 
 
-
+int compare_numbers (const void * x, const void * y) {
+  //do it in descending order
+   return ( *(unsigned long long*)y - *(unsigned long long*)x );
+}
 /*
   Takes in path to a FASTA file, k, and number of threads.
  */
@@ -113,7 +115,7 @@ int main(int argc, char* argv[]){
 	    }else{
 		//need to count number of nucleotides in the line
 		i = 0;
-	        while(line[i] == 'A' || line[i] == 'G' || line[i] == 'C' || line[i] == 'T'){
+	        while(line[i] >= 'A' && line[i] <= 'Z'){
 		    i++;
 		}
 	        sequence_lengths[num_fasta_sequences] += i;
@@ -186,11 +188,11 @@ int main(int argc, char* argv[]){
 	  Get count of nucleotides in FASTA file
 	*/
 	
-	//set equal to 1 to avoid issues when  a certain nucleotide doesn't exist
-	unsigned long long adenine_count = 1;
-	unsigned long long guanine_count = 1;
-	unsigned long long thymine_count = 1;
-	unsigned long long cytosine_count = 1;
+	//set equal to 1 to avoid issues when  a certain peptide doesn't exist
+	unsigned long long peptide_count[26];
+	for(i = 0; i < 26; i++){
+	  peptide_count[i] = 1;
+	}
 	fgets(line, sizeof(line), fasta_file);
 	free(nucleotide_distribution);
 	unsigned long long m = 0;
@@ -200,24 +202,16 @@ int main(int argc, char* argv[]){
 	    while(nucleotide_distribution_copy[i] > 0){
 		
 		if(sequence_lengths[sequence_index] >= k){
-		    while(nucleotide_distribution_copy[i] > 0 && (line[m] == 'A' || line[m] == 'G' || line[m] == 'C' || line[m] == 'T')){
+		  while(nucleotide_distribution_copy[i] > 0 && (line[m] >= 'A' && line[m] <= 'Z')){
 					//do the counts here.... increment m, decrement nucleotide_distribution_copy[i]
 			//don't forget to increment nucleotide_index.
-			if(line[m] == 'A'){
-			    adenine_count++;
-			}else if(line[m] == 'C'){
-			    cytosine_count++;
-			}else if(line[m] == 'G'){
-			    guanine_count++;
-			}else if(line[m] == 'T'){
-			    thymine_count++;
-			}
-			payloads[i].nucleotide_block[nucleotide_index] = line[m];
-			nucleotide_distribution_copy[i]--;
-			nucleotide_index++;
-			m++;
+		    peptide_count[line[m] - 'A']++;
+		    payloads[i].nucleotide_block[nucleotide_index] = line[m];
+		    nucleotide_distribution_copy[i]--;
+		    nucleotide_index++;
+		    m++;
 		    
-		    }
+		  }
 		}
 		/*
 		  Get the new line. Detect if it's a FASTA header.
@@ -226,11 +220,11 @@ int main(int argc, char* argv[]){
 		  
 		 */
 		if(nucleotide_distribution_copy[i] == 0){
-		    if(line[m] == 'A' || line[m] == 'G' || line[m] == 'C' || line[m] == 'T'){
+		  if(line[m] >= 'A' && line[m] <= 'Z'){
 			//then stopping in middle of line. Need to move to next payload, and add k-1 part, and \0.
 			temp_nucleotide_index = nucleotide_index;
 			m_temp = m;
-			while(temp_nucleotide_index - nucleotide_index < k - 1&& (line[m_temp] == 'A' || line[m_temp] == 'G' || line[m_temp] == 'C' || line[m_temp] == 'T')){
+			while(temp_nucleotide_index - nucleotide_index < k - 1 && (line[m] >= 'A' && line[m] <= 'Z')){
 			    payloads[i].nucleotide_block[temp_nucleotide_index] = line[m_temp];
 			    m_temp++;
 			    temp_nucleotide_index++;
@@ -279,44 +273,36 @@ int main(int argc, char* argv[]){
 	printf("Copied the sequences from the FASTA file\n");
 	fclose(fasta_file);
 	//We need to assign weights to the nucleotides, where the most frequent nucleotide has a weight of 1, second most frequent has weight of 2, then 3, then 4
-	unsigned long long counts[4];
-	
-	counts[0] = adenine_count;
-	counts[1] = guanine_count;
-	counts[2] = cytosine_count;
-	counts[3] = thymine_count;
-	
-	//now find the maximum 
-	int max_index;
-	int t;
-	unsigned int weights[4];
-	for(t = 0; t < 4; t++){
-	    max_index = 0;
-	    for(i = 0; i < 4; i++){
-		if(counts[i] > counts[max_index]){
-		    max_index = i;
-		}
-		
-	    }
-	    weights[max_index] = t + 1;
-	    counts[max_index] = 0;
+	unsigned long long counts[26];
+	for(int i = 0; i < 26; i++){
+	  counts[i] = peptide_count[i];
+	}
+	qsort(counts, 26, sizeof(unsigned long long), compare_numbers);
+	unsigned int weights[26];
+	for(int i = 0; i < 26; i++){
+	  weights[counts[i] - 'A'] = i + 1;
 	}
 	int num_sections = 2*num_threads;
-	//set up sections. 2*num_threads sections
-	unsigned int* section_distribution = distribute(4*k, num_sections);
+	/*
+	  The idea behind sections (I'm adding this on November 8th, 2017):
+
+	  Basically, each polypeptide has a score associated with it (which is the sum of the weights of the peptides in it)
+	  We section up the hash table into sections; each section has a range of sums. 	  
+	 */
+	unsigned int* section_distribution = distribute(26*k, num_sections);
 	unsigned int last_max_sum = k;
 
 	Section* sections = (Section*) malloc(num_sections*sizeof(Section));
-	HashTable* table = make_table(NUM_BUCKETS);
-	pthread_mutex_t lock;
-	pthread_mutex_init(&lock, NULL);
+
+
+
 	for(i = 0; i < 2*num_threads; i++){
 	    sections[i].min_sum = last_max_sum;
 	    sections[i].max_sum = section_distribution[i] + last_max_sum;
 	    last_max_sum = sections[i].max_sum;
-	    sections[i].table = table;
-	    //pthread_mutex_init(&sections[i].lock, NULL);
-	    sections[i].lock = lock;
+	    sections[i].table = make_table(NUM_BUCKETS);	    
+	    pthread_mutex_init(&sections[i].lock, NULL);
+	    //sections[i].lock = lock;
 	    if(i == 0){
 		sections[0].previous_section = NULL;
 	    }else{
@@ -330,10 +316,7 @@ int main(int argc, char* argv[]){
 	for(i = 0; i < num_threads; i++){
 	    payloads[i].sectionList = sections;
 	    payloads[i].k = k;
-	    payloads[i].a_weight = weights[0];
-	    payloads[i].g_weight = weights[1];
-	    payloads[i].c_weight = weights[2];
-	    payloads[i].t_weight = weights[3];
+	    payloads[i].weights = &weights[0];
 	    payloads[i].num_sections = 2*num_threads;
 	}
 	printf("Going to create threads\n");
@@ -348,9 +331,9 @@ int main(int argc, char* argv[]){
 	    pthread_join(threads[i], NULL);
 	}
 
-	//HashTable* tempTable;
-	print_and_free_table(table);
-	/*
+	HashTable* tempTable;
+
+
 	//now take the sections, and print out their hashtables.
 	for(i = 0; i < num_sections; i++){
 	    tempTable = sections[i].table;
@@ -359,7 +342,7 @@ int main(int argc, char* argv[]){
 
 	    pthread_mutex_destroy(&sections[i].lock);
 	    
-	    }*/
+	    }
 	
 	for( i = 0; i < num_threads; i++){
 	    free(payloads[i].nucleotide_block);
@@ -421,24 +404,14 @@ unsigned long long* distribute_nucleotides(unsigned long long num_nucleotides, i
 }
 
 //returns the sum of the window. If we hit the end of the sequence (that is, a '\0', then we return -1;
-int calculateSum(char* window_start, int k, unsigned int a_weight, unsigned int g_weight, unsigned int c_weight, unsigned int t_weight){
+int calculateSum(char* window_start, int k, unsigned int* weights){
     int i;
     int sum = 0;
     for(i = 0; i < k; i++){
 	if(window_start[i] == '\0'){
 	    return -1;
-	}else
-	if(window_start[i] == 'A'){
-	    sum += a_weight;
-	}else 
-	if(window_start[i] == 'G'){
-	    sum += g_weight;
-	}else 
-	if(window_start[i] == 'C'){
-	    sum += c_weight;
-	}else 
-	if(window_start[i] == 'T'){
-	    sum += t_weight;
+	}else{
+	  sum += weights[window_start[i] - 'A'];
 	}
 	
     }
@@ -491,17 +464,14 @@ void* mer_count(void* arg){
     size_t sequence_indices[BUFFER_CAPACITY];
     size_t amino_acid_indices[BUFFER_CAPACITY];
     int num_elements_in_buffer = 0;
-    unsigned int a_weight = payload->a_weight;
-    unsigned int g_weight = payload->g_weight;
-    unsigned int c_weight = payload->c_weight;
-    unsigned int t_weight = payload->t_weight;
+    unsigned int* weights = payload->weights;
 
 
 
     int i, j;
     for(i = 0; i < num_sequences; i++){
       
-	window_sum = calculateSum(window, k, a_weight, g_weight, c_weight, t_weight);
+	window_sum = calculateSum(window, k, weights);
 	
 	if(window_sum > 0){
 	    temp_section = getSection(sectionList, window_sum);
@@ -512,9 +482,6 @@ void* mer_count(void* arg){
 	      if(beginning){
 		printf("num elements in buffer: %i\n", num_elements_in_buffer);
 		printf("window: %s\n", window);
-	      }
-	      if(window[0] == 'G' && window[1] == 'G' && window[2] == 'G' && window[3] == 'T'){
-		printf("hello");
 	      }
 		if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
 		    //commit the buffer!
@@ -540,29 +507,17 @@ void* mer_count(void* arg){
 		    buffer[num_elements_in_buffer] = window;
 		    sequence_indices[num_elements_in_buffer] = sequence_index + i;
 		    amino_acid_indices[num_elements_in_buffer] = amino_acid_index;
-		    if(window[0] == 'A'){
-			window_sum -= a_weight;
-		    }else if(window[0] == 'G'){
-			window_sum -= g_weight;
-		    }else if(window[0] == 'C'){
-			window_sum -= c_weight;
-		    }else if(window[0] == 'T'){
-			window_sum -= t_weight;
+		    if(window[0] >= 'A' && window[0] <= 'Z'){
+		      window_sum -= weights[window[0] - 'A'];
+		    }
+		    if(window[k] >= 'A' && window[k] <= 'Z'){
+		      window_sum += weights[window[k] - 'A'];
 		    }
 		    /*
 		      Just to clear up a concern that I had, but I don't think I need to worry about:
 
 		      Suppose that window[k] == '\0'. Then the window_sum gets out of whack; but that doesn't matter, because we'll hae to recaclulate the window sum anyway, since we're at a new sequence.
 		     */
-		    if(window[k] == 'A'){
-			window_sum += a_weight;	
-		    }else if(window[k] == 'G'){
-			window_sum += g_weight;
-		    }else if(window[k] == 'C'){
-			window_sum += c_weight;
-		    }else if(window[k] == 'T'){
-			window_sum += t_weight;
-		    }
 		    window++;
 		    amino_acid_index++;
 		    num_elements_in_buffer++;
