@@ -105,8 +105,9 @@ int main(int argc, char* argv[]){
 
 
 
-		num_fasta_sequences++;
+
 		sequence_lengths[num_fasta_sequences] = 0;
+		  
 		
 
 	    }else{
@@ -117,12 +118,13 @@ int main(int argc, char* argv[]){
 		}
 	        sequence_lengths[num_fasta_sequences] += i;
 		num_nucleotides += i;
+		num_fasta_sequences++;
 	    }
 	}
 
 	//make sure the last sequence is of at least length k.
-	if(sequence_lengths[num_fasta_sequences] < k){
-	    num_nucleotides -= sequence_lengths[num_fasta_sequences];
+	if(sequence_lengths[num_fasta_sequences - 1] < k){
+	    num_nucleotides -= sequence_lengths[num_fasta_sequences - 1];
 	}
 
 
@@ -176,7 +178,7 @@ int main(int argc, char* argv[]){
 	//now we have the memory allocated -- make another pass through the file
 	rewind(fasta_file);
 
-	unsigned int sequence_index = 1;
+	unsigned int sequence_index = 0;
 	//this should be the index of where we can start writing to!
 	unsigned long long nucleotide_index = 0;
 	unsigned long long temp_nucleotide_index = 0;
@@ -305,12 +307,16 @@ int main(int argc, char* argv[]){
 	unsigned int last_max_sum = k;
 
 	Section* sections = (Section*) malloc(num_sections*sizeof(Section));
+	HashTable* table = make_table(NUM_BUCKETS);
+	pthread_mutex_t lock;
+	pthread_mutex_init(&lock, NULL);
 	for(i = 0; i < 2*num_threads; i++){
 	    sections[i].min_sum = last_max_sum;
 	    sections[i].max_sum = section_distribution[i] + last_max_sum;
 	    last_max_sum = sections[i].max_sum;
-	    sections[i].table = make_table(NUM_BUCKETS);
-	    pthread_mutex_init(&sections[i].lock, NULL);
+	    sections[i].table = table;
+	    //pthread_mutex_init(&sections[i].lock, NULL);
+	    sections[i].lock = lock;
 	    if(i == 0){
 		sections[0].previous_section = NULL;
 	    }else{
@@ -342,7 +348,9 @@ int main(int argc, char* argv[]){
 	    pthread_join(threads[i], NULL);
 	}
 
-	HashTable* tempTable;
+	//HashTable* tempTable;
+	print_and_free_table(table);
+	/*
 	//now take the sections, and print out their hashtables.
 	for(i = 0; i < num_sections; i++){
 	    tempTable = sections[i].table;
@@ -351,7 +359,8 @@ int main(int argc, char* argv[]){
 
 	    pthread_mutex_destroy(&sections[i].lock);
 	    
-	}
+	    }*/
+	
 	for( i = 0; i < num_threads; i++){
 	    free(payloads[i].nucleotide_block);
 	    
@@ -461,10 +470,16 @@ void* mer_count(void* arg){
     char* nucleotide_block = payload->nucleotide_block;
     int k = payload->k;
     size_t sequence_index = payload->first_sequence_index;
+    int beginning = 1;
+    if(sequence_index > 0){
+      beginning = 0;
+    }
     size_t amino_acid_index = payload->first_amino_acid_index;
     size_t num_sequences = payload->num_sequences;
     Section* sectionList = payload->sectionList;
-
+    if(beginning){
+      printf("sequence index: %zu, amino acid index: %zu, num sequences: %zu\n", sequence_index, amino_acid_index, num_sequences);
+    }
     //we need a window of size k
     char* window = nucleotide_block;
     int window_sum, min_sum, max_sum;
@@ -493,14 +508,19 @@ void* mer_count(void* arg){
 	    min_sum = temp_section->min_sum;
 	    max_sum = temp_section->max_sum;
 
-	    while(window[k - 1] != '\0'){
-	      if(strlen(window) < 4){
+	    while(window[k - 1] != '\0'){	    
+	      if(beginning){
+		printf("num elements in buffer: %i\n", num_elements_in_buffer);
 		printf("window: %s\n", window);
+	      }
+	      if(window[0] == 'G' && window[1] == 'G' && window[2] == 'G' && window[3] == 'T'){
+		printf("hello");
 	      }
 		if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
 		    //commit the buffer!
 		    pthread_mutex_lock(&(temp_section->lock));
 		    for(j = 0; j < num_elements_in_buffer; j++){
+		      printf("Commiting from buffer: %s\n", buffer[j]);
 		      increment_count(buffer[j], k, sequence_indices[j], amino_acid_indices[j], temp_section->table);
 		    }
 		    
@@ -568,6 +588,7 @@ void* mer_count(void* arg){
 	 //commit the buffer!
 	 pthread_mutex_lock(&(temp_section->lock));
 	 for(i = 0; i < num_elements_in_buffer; i++){
+	   printf("Commiting from buffer: %s\n", buffer[j]);
 	   increment_count(buffer[i], k, sequence_indices[i], amino_acid_indices[i], temp_section->table);
 	 }
 	 pthread_mutex_unlock(&(temp_section->lock));
