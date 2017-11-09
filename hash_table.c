@@ -147,9 +147,11 @@ void add_node(Node* node, HashTable* table){
 //since we're taking a substring of a sequence,
 
 void increment_count(char* sequence, int num_characters, size_t sequence_index, size_t amino_acid_index, char* location_pointer, char* sequence_start_pointer, HashTable* table){
+  
     if(((float) table->num_entries)/(table->num_buckets) >= MAX_LOAD_FACTOR){
+
 	//double the size of the table
-	table = doubleSize(table);
+	doubleSize(table);
     }
     int node_hash = hash(sequence, num_characters);
     LinkedList* list = &table->lists[node_hash % table->num_buckets];
@@ -201,6 +203,7 @@ void increment_count(char* sequence, int num_characters, size_t sequence_index, 
 	    }else{
 		if(node->nextNode == NULL){
 		    newNode = (Node*) malloc(sizeof(Node));
+		    table->num_entries++;
 		    newNode->count = 1;
 		    newNode->nextNode = NULL;
 		    newNode->num_characters = num_characters;
@@ -234,8 +237,8 @@ void increment_count(char* sequence, int num_characters, size_t sequence_index, 
 }
 
 
-HashTable* doubleSize(HashTable* table){
-    int i;
+void doubleSize(HashTable* table){
+  size_t i;
     Node* node;
     Node* nextNode;
 
@@ -246,14 +249,18 @@ HashTable* doubleSize(HashTable* table){
 	while(node != NULL){
 	    add_node(node, newTable);
 	    nextNode = node->nextNode;
-	    free(node);
+	    //free(node);
 	    node = nextNode;
 	}
     }
-    free(table->lists);
-    free(table);
+
+    table->lists = newTable->lists;
+    table->num_buckets = newTable->num_buckets;
+    table->num_entries = newTable->num_entries;
+    //free(table->lists);
+    //free(table);
     
-    return newTable;
+ 
 }
 /*
 HashTable* doubleSize(HashTable* table){

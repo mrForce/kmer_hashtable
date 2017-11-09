@@ -556,7 +556,9 @@ void* mer_count(void* arg){
     int i, j;
     printf("num sequences: %zu\n", num_sequences);
     for(i = 0; i < num_sequences; i++){
-      printf("sequence: %i\n", i);
+      if(i % 100 == 0){
+	printf("sequence: %i\n", i);
+      }
       sequence_start = window;
 	window_sum = calculateSum(window, k, weights);
 

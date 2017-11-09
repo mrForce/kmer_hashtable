@@ -60,7 +60,7 @@ int hash(char* sequence, int num_characters);
 
 
 
-HashTable* doubleSize(HashTable* table);
+void doubleSize(HashTable*);
 
 
 HashTable* make_table(unsigned long num_buckets);
@@ -80,5 +80,5 @@ void add_node(Node* node, HashTable* table);
 
 void increment_count(char*, int, size_t, size_t, char*, char*, HashTable*);
 
-HashTable* doubleSize(HashTable* table);
+
 
