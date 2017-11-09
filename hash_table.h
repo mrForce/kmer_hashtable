@@ -9,6 +9,10 @@ typedef struct _kmer_pointer{
   /* the sequence_number tells us which sequence the kmer is in. The amino_acid_index tells us where the kmer is within the sequence */
   size_t sequence_number;
   size_t amino_acid_index;
+  /* location_pointer points to the exact start of the kmer */
+  char* location_pointer;
+  /* sequence_start_pointer points to the start of the sequence that contains the kmer */
+  char* sequence_start_pointer;
 } KMerPointer;
 
 typedef struct _stack{
@@ -21,7 +25,7 @@ Stack* init_stack(size_t);
 
 
 int add_to_stack(Stack*, KMerPointer);
-Node* getNode(HashTable*, char*);
+
 typedef struct node{
   char* sequence;
   int num_characters;
@@ -43,7 +47,7 @@ typedef struct _hashTable{
     unsigned long num_entries;
     LinkedList* lists;
 } HashTable;
-
+Node* getNode(HashTable*, char*);
 typedef struct _fileIndex{
   off_t hash_table_area;
   off_t linked_list_area;
@@ -62,7 +66,7 @@ HashTable* doubleSize(HashTable* table);
 HashTable* make_table(unsigned long num_buckets);
 
 
-void print_and_free_table(HashTable* table);
+void print_and_free_table(HashTable*, FILE*);
 
 
 
@@ -74,7 +78,7 @@ void add_node(Node* node, HashTable* table);
 
 
 
-void increment_count(char* sequence, int num_characters, size_t sequence_index, size_t amino_acid_index, HashTable* table);
+void increment_count(char*, int, size_t, size_t, char*, char*, HashTable*);
 
 HashTable* doubleSize(HashTable* table);
 

@@ -68,7 +68,7 @@ HashTable* make_table(unsigned long num_buckets){
 
 Node* getNode(HashTable* table, char* kmer){
   size_t num_characters = strlen(kmer);
-  int hash = hash(kmer, num_characters);
+  int node_hash = hash(kmer, num_characters);
   int bucket = node_hash % table->num_buckets;
   LinkedList* list = &table->lists[bucket];
   Node* node = list->start;
@@ -87,7 +87,7 @@ Node* getNode(HashTable* table, char* kmer){
   Prints the table, and then frees it.
  */
 
-void print_and_free_table(HashTable* table){
+void print_and_free_table(HashTable* table, FILE* file){
   int i;
   size_t j;
     Node* node;
@@ -99,11 +99,11 @@ void print_and_free_table(HashTable* table){
 	if(node != NULL){
 	  z = 0;
 	    while(node != NULL){
-		printf("K-mer: %s, count: %lu, ", node->sequence, node->count);
+	      fprintf(file, "K-mer: %s, count: %lu, ", node->sequence, node->count);
 		for(j = 0; j < node->sequences_contain_kmer->current_size; j++){
-		  printf("(%lu, %lu), ", node->sequences_contain_kmer->elements[j].sequence_number, node->sequences_contain_kmer->elements[j].amino_acid_index);
+		  fprintf(file, "(%lu, %lu), ", node->sequences_contain_kmer->elements[j].sequence_number, node->sequences_contain_kmer->elements[j].amino_acid_index);
 		}
-		printf("\n");
+		fprintf(file, "\n");
 		nextNode = node->nextNode;
 		free_stack(node->sequences_contain_kmer);
 		free(node->sequence);
@@ -144,8 +144,9 @@ void add_node(Node* node, HashTable* table){
 
 //don't need to remove from hash table.
 
-//since we're taking a substring of a sequence, 
-void increment_count(char* sequence, int num_characters, size_t sequence_index, size_t amino_acid_index, HashTable* table){
+//since we're taking a substring of a sequence,
+
+void increment_count(char* sequence, int num_characters, size_t sequence_index, size_t amino_acid_index, char* location_pointer, char* sequence_start_pointer, HashTable* table){
     if(((float) table->num_entries)/(table->num_buckets) >= MAX_LOAD_FACTOR){
 	//double the size of the table
 	table = doubleSize(table);
@@ -172,6 +173,8 @@ void increment_count(char* sequence, int num_characters, size_t sequence_index, 
 	KMerPointer pointer;
 	pointer.amino_acid_index = amino_acid_index;
 	pointer.sequence_number = sequence_index;
+	pointer.location_pointer = location_pointer;
+	pointer.sequence_start_pointer = sequence_start_pointer;
 	if(!add_to_stack(node->sequences_contain_kmer, pointer)){
 	  printf("Problem with increment count\n");
 	}
@@ -189,6 +192,8 @@ void increment_count(char* sequence, int num_characters, size_t sequence_index, 
 		KMerPointer pointer;
 		pointer.amino_acid_index = amino_acid_index;
 		pointer.sequence_number = sequence_index;
+		pointer.location_pointer = location_pointer;
+		pointer.sequence_start_pointer = sequence_start_pointer;
 		if(!add_to_stack(node->sequences_contain_kmer, pointer)){
 		  printf("Problem with increment count\n");
 		}
@@ -213,6 +218,8 @@ void increment_count(char* sequence, int num_characters, size_t sequence_index, 
 		    KMerPointer pointer;
 		    pointer.amino_acid_index = amino_acid_index;
 		    pointer.sequence_number = sequence_index;
+		    pointer.location_pointer = location_pointer;
+		    pointer.sequence_start_pointer = sequence_start_pointer;
 		    if(!add_to_stack(newNode->sequences_contain_kmer, pointer)){
 		      printf("Problem with increment count\n");
 		    }

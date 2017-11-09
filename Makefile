@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -g
+CFLAGS = -Wall -O3
 DEPS = hash_table.h 
 OBJ = kmer.o hash_table.o
 

@@ -10,7 +10,7 @@
 #define LINE_LENGTH 256
 #define BUFFER_CAPACITY 50
 
-#define NUM_BUCKETS 1021
+#define NUM_BUCKETS 4084
 
 
 typedef struct _peptide_count{
@@ -30,7 +30,7 @@ typedef struct section{
 
 
 typedef struct {
-    //points to the block of memory that the thread should work with; this contains the sequences, seperated by \0 between each FASTE entry. 
+    //points to the block of memory that the thread should work with; this contains the sequences, seperated by \0 between each FASTA entry. 
     char* nucleotide_block;
     int k;
   unsigned int* weights;
@@ -41,6 +41,13 @@ typedef struct {
     int num_sections;
 } KMerPayload;
 
+typedef struct {
+  char* start_of_sequence;
+  char* start_of_kmer;
+  //last character in the sequence
+  char* end_of_sequence;
+} KMerLocation;
+
 
 
 
@@ -49,6 +56,7 @@ unsigned long long* distribute_nucleotides(unsigned long long num_nucleotides, i
 //what each thread does
 void* mer_count(void* arg);
 Section* getSection(Section* sectionList, int sum);
+int calculateSum(char*, int, unsigned int*);
 
 
 int compare_peptide_count (const void * x, const void * y) {
@@ -68,11 +76,13 @@ int compare_peptide_count (const void * x, const void * y) {
  */
 int main(int argc, char* argv[]){
   mtrace();
-    if(argc == 4){
+    if(argc == 8){
 	int num_threads = atoi(argv[6]);
+	char* table_output_path = argv[7];
 	int k = atoi(argv[2]);
 	char* fasta_file_path = argv[1];
-	char* kmer_file_path = argv[3];
+	printf("fasta file path: %s", fasta_file_path);
+	char* kmer_file_path = argv[3];     
 	int before_amino_acids = atoi(argv[4]);
 	int after_amino_acids = atoi(argv[5]);
 	FILE* fasta_file = fopen(fasta_file_path, "r");
@@ -89,12 +99,12 @@ int main(int argc, char* argv[]){
 	  
 	  I will then make a second pass through the file, and 
 	 */
-	unsigned int num_fasta_sequences = 0;
+	size_t num_fasta_sequences = 0;
 	
 	//use initial size of 10 sequences. We'll double the length whenever we need to using realloc.
         unsigned long* sequence_lengths = (unsigned long*) malloc(sizeof(unsigned long)*10);
 	//how many sizes can be stored before we need to realloc.
-	unsigned int capacity = 10;
+	size_t capacity = 10;
 	//total number of nucleotides.
 
 	unsigned long long num_nucleotides = 0;
@@ -102,47 +112,54 @@ int main(int argc, char* argv[]){
 	int i;
 	unsigned int num_kmers = 0;
 	while(fgets(line, sizeof(line), kmer_file) != NULL){
-	  if(strlen(line) == k){
+	  if(strlen(line) >= k){
 	    num_kmers++;
 	  }
 	}
 	rewind(kmer_file);
+	//printf(" kmers\n", num_kmers);
 	char* kmers = (char*)malloc(sizeof(char)*(1 + k)*num_kmers);
 	i = 0;
 	while(fgets(line, sizeof(line), kmer_file) != NULL){
-	  strncpy(&kmers[i],line, k);
-	  i += (k + 1);
-	  kmers[i - 1] = '\0';
+	  if(strlen(line) >= k){
+	    strncpy(&kmers[i],line, k);
+	    i += (k + 1);
+	    kmers[i - 1] = '\0';
+	  }
 	}
-	printf("%ui kmers\n", num_kmers);
+	printf("%u kmers\n", num_kmers);
+
 	//I'd like to allocate a whole block of memory for the FASTA file, so let's 
 	while(fgets(line, sizeof(line), fasta_file) != NULL){
-	    //if line starts with '>', then it's the header to a fasta file.
-	    if(line[0] == '>'){
-		/*
-		  If the sequence length is less than k, then don't include it in the number of nucleotides.
+	  //if line starts with '>', then it's the header to a fasta file.
+	  if(line[0] == '>'){
+
+	    /*
+	      If the sequence length is less than k, then don't include it in the number of nucleotides.
 		 */
-		if(num_fasta_sequences > 0 && sequence_lengths[num_fasta_sequences - 1] < k){
-		    num_nucleotides -= sequence_lengths[num_fasta_sequences-1];
-		}
-		if(capacity == num_fasta_sequences){
-		    //then realloc -- since it's an array of unsigned longs, this shouldn't be too expensive.
-		    sequence_lengths = realloc(sequence_lengths, 2*capacity*sizeof(unsigned long));
-		    capacity = capacity*2;
-		    
-		    if(sequence_lengths == NULL){
-			//then realloc failed.
-			//if there isn't enough memory to do a realloc, then our k-mer counting attempt will surely fail. Let's just exit at this point.
-			printf("Realloc failed while parsing the FASTA file. Exiting\n");
-			return -1;
-		    }
-		}
+	    if(num_fasta_sequences > 0 && sequence_lengths[num_fasta_sequences - 1] < k){
+	      num_nucleotides -= sequence_lengths[num_fasta_sequences-1];
+	    }
 
+	    if(capacity == num_fasta_sequences){		  
+	      //then realloc -- since it's an array of unsigned longs, this shouldn't be too expensive.
 
-
-
-		sequence_lengths[num_fasta_sequences] = 0;
-		num_fasta_sequences++;
+	      sequence_lengths = realloc(sequence_lengths, 2*capacity*sizeof(unsigned long));
+	      capacity = capacity*2;
+	      
+	      if(sequence_lengths == NULL){
+		//then realloc failed.
+		//if there isn't enough memory to do a realloc, then our k-mer counting attempt will surely fail. Let's just exit at this point.
+		printf("Realloc failed while parsing the FASTA file. Exiting\n");
+		return -1;
+	      }
+	    }
+	    
+	    
+	    
+	    
+	    sequence_lengths[num_fasta_sequences] = 0;
+	    num_fasta_sequences++;
 		
 
 	    }else{
@@ -367,24 +384,44 @@ int main(int argc, char* argv[]){
 	    pthread_join(threads[i], NULL);
 	}
 
-	HashTable* tempTable;
+
 
 	printf("Threads have finished\n");
 	char* kmer;
+	unsigned int fragment_length = k + before_amino_acids + after_amino_acids;
+	char fragment[fragment_length + 1];
+	fragment[fragment_length] = '\0';
 	//now take the sections, and print out their hashtables.
+	printf("num kmers: %i\n", num_kmers);
 	for(i = 0; i < num_kmers; i++){
 	  kmer = &kmers[i*(k + 1)];
 	  Section* section = getSection(sections, calculateSum(kmer, k, weights));
 	  Node* node = getNode(section->table, kmer);
 	  if(node == NULL){
-	    printf("Nothing matches: %s\n", kmer);	    
+	    fprintf(stderr, "--Nothing matches: %s--\n", kmer);	    
 	  }else{
-	    for(
+	    printf("kmer: %s\n", kmer);
+	    for(size_t h = 0; h < node->sequences_contain_kmer->current_size; h++){
+	      char* kmer_location = node->sequences_contain_kmer->elements[h].location_pointer;
+	      size_t sequence_number = node->sequences_contain_kmer->elements[h].sequence_number;
+	      size_t amino_acid_index = node->sequences_contain_kmer->elements[h].amino_acid_index;
+	      if(amino_acid_index < before_amino_acids){
+		fprintf(stderr, "--kmer: %s is too close to N-terminus in sequence number %zu, at position %zu--\n", kmer, sequence_number, amino_acid_index);
+	      }else if(strlen(kmer_location) - k < after_amino_acids){
+		fprintf(stderr, "--kmer: %s is too close to C-terminus in sequence number %zu, at position %zu--\n", kmer, sequence_number, amino_acid_index);
+	      }else{
+		strncpy(fragment, kmer_location - before_amino_acids, fragment_length);
+		printf("%s\n", fragment); 
+	      }
+	    }
 	  }
 	}
+	FILE* table_output_file = fopen(table_output_path, "w");
+	
+
 	for(i = 0; i < num_sections; i++){
-	    tempTable = sections[i].table;
-	    //print_and_free_table(tempTable);
+	  HashTable* tempTable = sections[i].table;
+	  print_and_free_table(tempTable, table_output_file);
 	    //now need to destroy the mutex
 
 	    pthread_mutex_destroy(&sections[i].lock);
@@ -404,7 +441,7 @@ int main(int argc, char* argv[]){
 	free(sections);
 
     }else{
-	printf("Usage: kmer <FASTA file> <k> <number of threads> \n");
+	printf("Usage: kmer <FASTA file> <k> <kmer file> <before amino acids> <after amino acids> <number of threads> <output file>\n");
     }
     muntrace();
     return 0;
@@ -491,10 +528,7 @@ void* mer_count(void* arg){
     int k = payload->k;
 
     size_t sequence_index = payload->first_sequence_index;
-    int beginning = 1;
-    if(sequence_index > 0){
-      beginning = 0;
-    }
+
     size_t amino_acid_index = payload->first_amino_acid_index;
     size_t num_sequences = payload->num_sequences;
     Section* sectionList = payload->sectionList;
@@ -512,14 +546,18 @@ void* mer_count(void* arg){
     char *buffer[BUFFER_CAPACITY];
     size_t sequence_indices[BUFFER_CAPACITY];
     size_t amino_acid_indices[BUFFER_CAPACITY];
+    char* sequence_start_pointers[BUFFER_CAPACITY];
+
     int num_elements_in_buffer = 0;
     unsigned int* weights = payload->weights;
+    char* sequence_start;
 
-
-
+    
     int i, j;
+    printf("num sequences: %zu\n", num_sequences);
     for(i = 0; i < num_sequences; i++){
-      
+      printf("sequence: %i\n", i);
+      sequence_start = window;
 	window_sum = calculateSum(window, k, weights);
 
 	if(window_sum > 0){
@@ -531,9 +569,11 @@ void* mer_count(void* arg){
 	 
 	      if(num_elements_in_buffer == BUFFER_CAPACITY|| window_sum < min_sum || window_sum > max_sum){
 		    //commit the buffer!
-		    pthread_mutex_lock(&(temp_section->lock));
+		    pthread_mutex_lock(&(temp_section->lock));		    
 		    for(j = 0; j < num_elements_in_buffer; j++){
-		      increment_count(buffer[j], k, sequence_indices[j], amino_acid_indices[j], temp_section->table);
+		      /* The reason I repeat buffer[j] is because the increment_count function does not assume that the first argument
+			 actually points to the location of the kmer in the sequence*/
+		      increment_count(buffer[j], k, sequence_indices[j], amino_acid_indices[j], buffer[j], sequence_start_pointers[j], temp_section->table);
 		    }
 		    
 		    pthread_mutex_unlock(&(temp_section->lock));
@@ -551,6 +591,7 @@ void* mer_count(void* arg){
 		    //if we're in the same section, then move window forward by doing this stuff.
 		    buffer[num_elements_in_buffer] = window;
 		    sequence_indices[num_elements_in_buffer] = sequence_index + i;
+		    sequence_start_pointers[num_elements_in_buffer] = sequence_start;
 		    amino_acid_indices[num_elements_in_buffer] = amino_acid_index;
 		    if(window[0] >= 'A' && window[0] <= 'Z'){
 		      window_sum -= weights[window[0] - 'A'];
@@ -588,7 +629,7 @@ void* mer_count(void* arg){
 	 //commit the buffer!
 	 pthread_mutex_lock(&(temp_section->lock));
 	 for(i = 0; i < num_elements_in_buffer; i++){
-	   increment_count(buffer[i], k, sequence_indices[i], amino_acid_indices[i], temp_section->table);
+	   increment_count(buffer[i], k, sequence_indices[i], amino_acid_indices[i], buffer[i], sequence_start_pointers[i], temp_section->table);
 	 }
 	 pthread_mutex_unlock(&(temp_section->lock));
 	 num_elements_in_buffer = 0;
