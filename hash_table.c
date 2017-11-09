@@ -66,6 +66,23 @@ HashTable* make_table(unsigned long num_buckets){
 }
 
 
+Node* getNode(HashTable* table, char* kmer){
+  size_t num_characters = strlen(kmer);
+  int hash = hash(kmer, num_characters);
+  int bucket = node_hash % table->num_buckets;
+  LinkedList* list = &table->lists[bucket];
+  Node* node = list->start;
+  while(node != NULL){
+    if(strncmp(node->sequence, kmer, num_characters) == 0){
+      return node;
+    }else{
+      node = node->nextNode;
+    }
+  }
+  return NULL;
+
+}
+
 /*
   Prints the table, and then frees it.
  */

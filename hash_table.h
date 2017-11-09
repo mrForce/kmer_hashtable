@@ -21,7 +21,7 @@ Stack* init_stack(size_t);
 
 
 int add_to_stack(Stack*, KMerPointer);
-
+Node* getNode(HashTable*, char*);
 typedef struct node{
   char* sequence;
   int num_characters;

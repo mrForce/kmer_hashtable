@@ -48,7 +48,7 @@ unsigned int* distribute(unsigned int num_items, int num_buckets);
 unsigned long long* distribute_nucleotides(unsigned long long num_nucleotides, int num_threads);
 //what each thread does
 void* mer_count(void* arg);
-
+Section* getSection(Section* sectionList, int sum);
 
 
 int compare_peptide_count (const void * x, const void * y) {
@@ -64,15 +64,19 @@ int compare_peptide_count (const void * x, const void * y) {
   
 }
 /*
-  Takes in path to a FASTA file, k, and number of threads.
+  Takes in path to a FASTA file, k, a list of k-mers, the number of before amino acids, the number of after amino acids, and number of threads.
  */
 int main(int argc, char* argv[]){
   mtrace();
     if(argc == 4){
-	int num_threads = atoi(argv[3]);
+	int num_threads = atoi(argv[6]);
 	int k = atoi(argv[2]);
 	char* fasta_file_path = argv[1];
+	char* kmer_file_path = argv[3];
+	int before_amino_acids = atoi(argv[4]);
+	int after_amino_acids = atoi(argv[5]);
 	FILE* fasta_file = fopen(fasta_file_path, "r");
+	FILE* kmer_file = fopen(kmer_file_path, "r");
 	char line[LINE_LENGTH];
 	/*
 	  I'm going to make two passes through the file.
@@ -94,7 +98,23 @@ int main(int argc, char* argv[]){
 	//total number of nucleotides.
 
 	unsigned long long num_nucleotides = 0;
+	
 	int i;
+	unsigned int num_kmers = 0;
+	while(fgets(line, sizeof(line), kmer_file) != NULL){
+	  if(strlen(line) == k){
+	    num_kmers++;
+	  }
+	}
+	rewind(kmer_file);
+	char* kmers = (char*)malloc(sizeof(char)*(1 + k)*num_kmers);
+	i = 0;
+	while(fgets(line, sizeof(line), kmer_file) != NULL){
+	  strncpy(&kmers[i],line, k);
+	  i += (k + 1);
+	  kmers[i - 1] = '\0';
+	}
+	printf("%ui kmers\n", num_kmers);
 	//I'd like to allocate a whole block of memory for the FASTA file, so let's 
 	while(fgets(line, sizeof(line), fasta_file) != NULL){
 	    //if line starts with '>', then it's the header to a fasta file.
@@ -350,10 +370,21 @@ int main(int argc, char* argv[]){
 	HashTable* tempTable;
 
 	printf("Threads have finished\n");
+	char* kmer;
 	//now take the sections, and print out their hashtables.
+	for(i = 0; i < num_kmers; i++){
+	  kmer = &kmers[i*(k + 1)];
+	  Section* section = getSection(sections, calculateSum(kmer, k, weights));
+	  Node* node = getNode(section->table, kmer);
+	  if(node == NULL){
+	    printf("Nothing matches: %s\n", kmer);	    
+	  }else{
+	    for(
+	  }
+	}
 	for(i = 0; i < num_sections; i++){
 	    tempTable = sections[i].table;
-	    print_and_free_table(tempTable);
+	    //print_and_free_table(tempTable);
 	    //now need to destroy the mutex
 
 	    pthread_mutex_destroy(&sections[i].lock);
