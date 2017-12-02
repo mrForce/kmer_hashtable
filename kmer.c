@@ -560,7 +560,7 @@ void* mer_count(void* arg){
 	printf("sequence: %i\n", i);
       }
       sequence_start = window;
-	window_sum = calculateSum(window, k, weights);
+      window_sum = calculateSum(window, k, weights);
 
 	if(window_sum > 0){
 	    temp_section = getSection(sectionList, window_sum);
